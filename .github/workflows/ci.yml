@@ -1,0 +1,68 @@
+name: CI
+
+# רץ בכל push (ובכל Pull Request)
+on:
+  push:
+  pull_request:
+
+jobs:
+  # ---------- עבודה 1: בדיקת תקינות ה-Build ----------
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (הורדת הקוד)
+        uses: actions/checkout@v4
+
+      - name: Docker Compose build
+        run: docker compose build
+
+      - name: Smoke test (הרמה ובדיקה שהאתר עונה)
+        run: |
+          docker compose up -d
+          sleep 5
+          curl --fail --silent http://localhost:8080/ > /dev/null
+          curl --fail --silent http://localhost:8080/storage/ | grep -q "ZORG-42.png"
+          docker compose down -v
+
+  # ---------- בונוס: פרסום האימג'ים ל-GitHub Container Registry ----------
+  publish:
+    needs: build                       # רק אחרי שה-build עבר
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write                  # הרשאה לכתוב ל-ghcr.io
+    strategy:
+      matrix:
+        include:
+          - name: web
+            context: ./web
+          - name: storage
+            context: ./storage
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login ל-ghcr.io עם GITHUB_TOKEN
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: יצירת תגיות (מספר גרסה אוטומטי)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}-${{ matrix.name }}
+          tags: |
+            type=raw,value=v1.${{ github.run_number }}
+            type=raw,value=latest
+            type=sha
+
+      - name: Build ו-Push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

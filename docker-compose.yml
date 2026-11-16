@@ -1,0 +1,22 @@
+services:
+  # שרת ה-Web: Nginx שמגיש את לוח הבקרה (HTML) ומעביר בקשות ל-storage
+  web:
+    build: ./web
+    ports:
+      - "8080:80"        # פורט-מחשב:פורט-קונטיינר -> http://localhost:8080
+    depends_on:
+      - storage
+    restart: unless-stopped
+
+  # שרת האחסון: Apache שמגיש את תמונות הלוחיות שהמצלמה צילמה
+  storage:
+    build: ./storage
+    volumes:
+      # Volume בשם plates_data: התמונות נשמרות גם אחרי docker compose down
+      - plates_data:/usr/local/apache2/htdocs/plates
+    restart: unless-stopped
+    # שימו לב: אין "ports" - ה-storage נגיש רק מתוך הרשת הפנימית של Compose,
+    # והדפדפן מגיע אליו דרך Nginx.
+
+volumes:
+  plates_data:

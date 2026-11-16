@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>חניון חלליות - לוח בקרה</title>
+  <style>
+    :root {
+      --bg: #070b18;
+      --card: #111a33;
+      --line: #25345f;
+      --text: #e8eeff;
+      --muted: #8d9bc4;
+      --accent: #5ee7ff;
+      --warn: #ff5d73;
+      --ok: #5dffa8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: system-ui, "Segoe UI", Arial, sans-serif;
+      color: var(--text);
+      /* כוכבים ברקע - כמה נקודות קטנות בעזרת radial-gradient */
+      background:
+        radial-gradient(1.5px 1.5px at 20% 30%, #fff8, transparent),
+        radial-gradient(1.5px 1.5px at 70% 60%, #fff8, transparent),
+        radial-gradient(1px 1px at 40% 80%, #fff8, transparent),
+        radial-gradient(1px 1px at 90% 15%, #fff8, transparent),
+        var(--bg);
+    }
+    header {
+      display: flex; flex-wrap: wrap; gap: 16px;
+      align-items: center; justify-content: space-between;
+      padding: 20px 5vw; border-bottom: 1px solid var(--line);
+    }
+    h1 { margin: 0; font-size: 1.6rem; }
+    #logo { cursor: pointer; user-select: none; display: inline-block; }
+    .counter { font-size: 1.2rem; }
+    .counter b { font-size: 2rem; color: var(--accent); }
+    .counter.full b { color: var(--warn); }
+
+    /* התראת "חניון מלא" - מופיעה רק כשאין מקום */
+    #fullAlert {
+      display: none; margin: 16px 5vw 0; padding: 14px 18px;
+      border: 2px solid var(--warn); border-radius: 12px;
+      background: #ff5d7320; color: #ffb3bd; font-weight: 700;
+      animation: blink 1s infinite;
+    }
+    #fullAlert.show { display: block; }
+    @keyframes blink { 50% { background: #ff5d7350; } }
+
+    main {
+      display: grid; gap: 18px; padding: 24px 5vw 80px;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    }
+    .car {
+      background: var(--card); border: 1px solid var(--line);
+      border-radius: 14px; overflow: hidden;
+    }
+    .car.new { animation: arrive .6s ease-out; }
+    @keyframes arrive { from { transform: translateY(-30px) scale(.9); opacity: 0; } }
+    .car img { width: 100%; display: block; background: #000; }
+    .car p { margin: 0; padding: 12px 14px; color: var(--muted); font-size: .95rem; }
+    .car h3 { margin: 0; padding: 12px 14px 0; color: var(--accent); letter-spacing: 1px; direction: ltr; text-align: right; }
+
+    #status { color: var(--muted); padding: 0 5vw; min-height: 1.5em; }
+    #status.error { color: var(--warn); }
+
+    #toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(120px);
+      background: var(--ok); color: #04210f; padding: 12px 22px; border-radius: 999px;
+      font-weight: 700; transition: transform .4s; z-index: 10;
+    }
+    #toast.show { transform: translateX(-50%) translateY(0); }
+
+    /* Easter egg: חללית שחוצה את המסך */
+    #ufo { position: fixed; top: 20%; right: -120px; font-size: 5rem; z-index: 20; pointer-events: none; }
+    #ufo.fly { animation: fly 3s linear; }
+    @keyframes fly { to { right: 110vw; transform: rotate(-20deg); } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1><span id="logo">🛸</span> חניון חלליות - לוח בקרה</h1>
+    <div id="counter" class="counter">תפוסה: <b id="count">0</b> / <span id="cap"></span></div>
+  </header>
+
+  <div id="fullAlert">⚠️ החניון מלא! החללית הבאה תצטרך לחנות על הירח.</div>
+  <p id="status">טוען נתונים...</p>
+  <main id="cars"></main>
+  <div id="toast"></div>
+  <div id="ufo">🛸</div>
+
+  <script>
+    // ===== הגדרות =====
+    const CAPACITY = 8;          // מספר מקומות החנייה בחניון
+    const REFRESH_MS = 3000;     // כל כמה זמן לשאול את שרת האחסון מחדש
+    const STORAGE_URL = "/storage/"; // Nginx מעביר את זה לשרת Apache
+
+    // הודעות מצחיקות - לכל חללית נבחרת הודעה לפי השם שלה
+    const JOKES = [
+      "הגיעה מהירח. שילמה בקריפטו.",
+      "חנתה על שני מקומות. כרגיל.",
+      "הנהג טוען שהיה פקק בשביל הכוכבים.",
+      "אין לה ביטוח, אבל יש לה לייזר.",
+      "מנוע היפר-דרייב כבוי. תודה.",
+      "ננעלה בעזרת שדה כוח.",
+      "ביקשה חנייה קרובה לכניסה. יש לה אנטנה עדינה.",
+    ];
+    function jokeFor(name) {
+      let sum = 0;
+      for (const ch of name) sum += ch.charCodeAt(0);
+      return JOKES[sum % JOKES.length];
+    }
+
+    // ===== קריאת התמונות משרת האחסון =====
+    // Apache מחזיר דף HTML עם רשימת קבצים. אנחנו מפרסרים אותו ומוציאים את הקישורים לתמונות.
+    async function fetchPlates() {
+      const res = await fetch(STORAGE_URL, { cache: "no-store" });
+      if (!res.ok) throw new Error("storage returned " + res.status);
+      const html = await res.text();
+      const doc = new DOMParser().parseFromString(html, "text/html");
+      return [...doc.querySelectorAll("a")]
+        .map(a => a.getAttribute("href"))
+        .filter(href => /\.(png|jpe?g|gif|webp)$/i.test(href))
+        .map(href => decodeURIComponent(href))
+        .sort();
+    }
+
+    // ===== ציור המסך =====
+    const carsEl = document.getElementById("cars");
+    let known = new Set();   // לוחיות שכבר ראינו (כדי לזהות רכב חדש)
+    let firstLoad = true;
+
+    function render(files, fresh) {
+      const count = files.length;
+      document.getElementById("count").textContent = count;
+      document.getElementById("counter").classList.toggle("full", count >= CAPACITY);
+      document.getElementById("fullAlert").classList.toggle("show", count >= CAPACITY);
+
+      carsEl.innerHTML = "";
+      for (const file of files) {
+        const plate = file.replace(/\.[^.]+$/, "");   // שם בלי סיומת
+        const card = document.createElement("div");
+        // רק חללית חדשה מקבלת אנימציית כניסה, כדי שהמסך לא יהבהב
+        card.className = fresh.has(file) ? "car new" : "car";
+        card.innerHTML = `<img><h3></h3><p></p>`;
+        // שם הקובץ מגיע מבחוץ, לכן מכניסים אותו דרך תכונות (src, alt, textContent)
+        // ולא בתוך מחרוזת HTML - כך אי אפשר להזריק קוד זדוני דרך שם קובץ.
+        const img = card.querySelector("img");
+        img.src = STORAGE_URL + encodeURIComponent(file);
+        img.alt = "לוחית " + plate;
+        card.querySelector("h3").textContent = plate;
+        card.querySelector("p").textContent = jokeFor(plate);
+        carsEl.appendChild(card);
+      }
+    }
+
+    function showToast(text) {
+      const t = document.getElementById("toast");
+      t.textContent = text;
+      t.classList.add("show");
+      setTimeout(() => t.classList.remove("show"), 3500);
+    }
+
+    async function refresh() {
+      const status = document.getElementById("status");
+      try {
+        const files = await fetchPlates();
+        // האם הגיעה חללית חדשה מאז הבדיקה הקודמת?
+        if (!firstLoad) {
+          for (const f of files) {
+            if (!known.has(f)) showToast("🚀 נכנסה חללית: " + f.replace(/\.[^.]+$/, ""));
+          }
+        }
+        // מציירים מחדש רק אם משהו השתנה (נוספה או נעלמה לוחית)
+        const fresh = new Set(files.filter(f => !known.has(f)));
+        const changed = firstLoad || fresh.size > 0 || files.length !== known.size;
+        known = new Set(files);
+        firstLoad = false;
+        if (changed) render(files, fresh);
+        status.textContent = "";
+        status.className = "";
+      } catch (err) {
+        status.textContent = "שרת האחסון לא זמין: " + err.message;
+        status.className = "error";
+      }
+    }
+
+    document.getElementById("cap").textContent = CAPACITY;
+    refresh();
+    setInterval(refresh, REFRESH_MS);
+
+    // ===== Easter egg: 5 לחיצות על הלוגו משגרות חללית =====
+    let clicks = 0;
+    document.getElementById("logo").addEventListener("click", () => {
+      clicks++;
+      if (clicks === 5) {
+        clicks = 0;
+        const ufo = document.getElementById("ufo");
+        ufo.classList.remove("fly");
+        void ufo.offsetWidth;   // איפוס האנימציה כדי שאפשר יהיה להריץ שוב
+        ufo.classList.add("fly");
+        showToast("👽 מצאתם את הסוד!");
+      }
+    });
+  </script>
+</body>
+</html>
