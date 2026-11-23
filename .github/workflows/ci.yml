@@ -1,0 +1,17 @@
+name: CI
+
+# רץ בכל push
+on:
+  push:
+  pull_request:
+
+jobs:
+  # 1) בדיקת תקינות: האם ה-Compose תקין והאם ה-Docker Build עובד
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check compose file
+        run: docker compose config -q
+      - name: Docker build
+        run: docker compose build

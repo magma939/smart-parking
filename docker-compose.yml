@@ -1,0 +1,25 @@
+services:
+
+  storage:
+    image: httpd:2.4
+    volumes:
+      - plates:/usr/local/apache2/htdocs/plates  
+    networks:
+      - parking-net
+    restart: unless-stopped
+
+  web:
+    build: ./web
+    ports:
+      - "8080:80"
+    depends_on:
+      - storage
+    networks:
+      - parking-net
+    restart: unless-stopped
+
+volumes:
+  plates:
+
+networks:
+  parking-net:

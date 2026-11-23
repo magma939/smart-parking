@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>חניון חלליות חכם</title>
+  <style>
+    body { margin: 0; font-family: Arial, sans-serif; background: #0b1026; color: #e8e8ff; text-align: center; }
+    h1 { cursor: pointer; user-select: none; margin: 24px 0 8px; }
+    #status { font-size: 1.3em; margin-bottom: 16px; }
+    #alert { display: none; background: #c0152f; color: #fff; padding: 12px; font-weight: bold; font-size: 1.2em; }
+    #cars { display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; padding: 16px; }
+    .car { background: #1b2250; border-radius: 12px; padding: 10px; width: 320px; }
+    .car img { width: 100%; border-radius: 8px; }
+    .car p { margin: 8px 0 0; }
+  </style>
+</head>
+<body>
+  <div id="alert">🚨 החניון מלא! שומר, אל תכניס עוד חלליות 🚨</div>
+  <h1 id="title">🛸 חניון חלליות חכם 🛸</h1>
+  <div id="status">טוען...</div>
+  <div id="cars"></div>
+
+  <script>
+    const CAPACITY = 6; // כמה חלליות נכנסות בחניון
+
+    // האלמנט האישי: הודעה מצחיקה לכל חללית נכנסת
+    const JOKES = [
+      "נחתה בחנייה כפולה, כמובן 🙄",
+      "הדלק נגמר... שוב 🪫",
+      "מישהו שכח לכבות מנוע היפר-דרייב",
+      "חייזר נהג, אין לו רישיון אבל יש לו ביטוח",
+      "חנתה על הירח, שלם בקופה 🌙",
+    ];
+
+    // Easter Egg: 5 לחיצות על הכותרת
+    let clicks = 0;
+    document.getElementById("title").onclick = () => {
+      if (++clicks === 5) alert("🛸 מצאת את ה-Easter Egg! אף אחד לא ראה אותך.");
+    };
+
+    async function loadCars() {
+      try {
+        // מבקשים מ-Nginx את רשימת הקבצים; Nginx מעביר את הבקשה ל-Apache (storage)
+        const res = await fetch("/plates/");
+        const html = await res.text();
+        const page = new DOMParser().parseFromString(html, "text/html");
+
+        const files = [...page.querySelectorAll("a")]
+          .map(a => a.getAttribute("href"))
+          .filter(h => /\.(svg|png|jpe?g|webp)$/i.test(h));
+
+        document.getElementById("status").textContent =
+          `תפוסה: ${files.length} / ${CAPACITY}`;
+        document.getElementById("alert").style.display =
+          files.length >= CAPACITY ? "block" : "none";
+
+        document.getElementById("cars").innerHTML = files.map((f, i) => {
+          const plate = decodeURIComponent(f).replace(/\.[^.]+$/, "");
+          return `<div class="car">
+                    <img src="/plates/${f}" alt="${plate}">
+                    <p><b>${plate}</b></p>
+                    <p>${JOKES[i % JOKES.length]}</p>
+                  </div>`;
+        }).join("");
+      } catch (e) {
+        document.getElementById("status").textContent = "שרת האחסון לא עונה ❌";
+      }
+    }
+
+    loadCars();
+    setInterval(loadCars, 5000); // רענון אוטומטי כל 5 שניות
+  </script>
+</body>
+</html>
