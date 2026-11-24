@@ -18,4 +18,4 @@ docker compose cp new-cars/COMET-99.svg storage:/usr/local/apache2/htdocs/plates
 docker compose down
 docker compose up -d
 
-שים לב: בזמן הדמו, הרצת docker compose down בלי -v שומרת את התמונות בווליום. הוספת -v תמחק את הווליום ותתחיל מחדש.
+שים לב: הרצת docker compose down בלי -v שומרת את התמונות בווליום. הוספת -v תמחק את הווליום ותתחיל מחדש.
